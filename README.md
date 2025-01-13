@@ -62,3 +62,7 @@ python app.py
 ```
 
 6. Access the web interface at http://localhost:5001
+
+### Screenshot
+
+![Screenshot](screenshot.png)
