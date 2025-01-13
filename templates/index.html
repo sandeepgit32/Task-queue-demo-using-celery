@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Addition Task Queue</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Addition Task Queue</h1>
+        <div class="form-container">
+            <form id="addForm">
+                <input type="number" name="a" placeholder="First number" required>
+                <input type="number" name="b" placeholder="Second number" required>
+                <button type="submit">Add Numbers</button>
+            </form>
+        </div>
+        
+        <!-- Add statistics component -->
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-label">Completed Tasks:</span>
+                <span id="completedTasks">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">In Queue:</span>
+                <span id="inProgressTasks">0</span>
+            </div>
+        </div>
+
+        <div class="task-history">
+            <h2>Task History</h2>
+            <div id="taskList" class="task-list">
+                <!-- Tasks will be added here dynamically -->
+            </div>
+        </div>
+
+        <script>
+            let taskHistory = [];
+
+            // Load history from Redis on page load
+            window.addEventListener('load', async () => {
+                try {
+                    const response = await fetch('/tasks/history');
+                    const history = await response.json();
+                    taskHistory = history;
+                    
+                    // Recheck status for any pending tasks
+                    taskHistory.forEach(task => {
+                        if (task.status === 'PENDING') {
+                            checkResult(task.id);
+                        }
+                    });
+                    updateTaskList();
+                } catch (error) {
+                    console.error('Error loading history:', error);
+                }
+            });
+
+            let statsCompleted = 0;
+            let statsInProgress = 0;
+
+            // Load stats from Redis on page load
+            window.addEventListener('load', async () => {
+                try {
+                    const response = await fetch('/tasks/stats');
+                    const stats = await response.json();
+                    statsCompleted = stats.completed;
+                    statsInProgress = stats.inProgress;
+                    updateStats();
+                } catch (error) {
+                    console.error('Error loading stats:', error);
+                }
+            });
+
+            document.getElementById('addForm').onsubmit = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const a = formData.get('a');
+                const b = formData.get('b');
+                
+                // Only reset the form if there's an error
+                try {
+                    const response = await fetch('/add', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ a: Number(a), b: Number(b) })
+                    });
+                    const data = await response.json();
+                    
+                    if (data.task_id) {
+                        addTaskToHistory(data.task_id, a, b);
+                        checkResult(data.task_id);
+                        // Don't reset the form - remove e.target.reset() if it exists
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    e.target.reset(); // Only reset on error
+                }
+            };
+
+            function addTaskToHistory(taskId, a, b) {
+                const task = {
+                    id: taskId,
+                    a: a,
+                    b: b,
+                    status: 'PENDING',
+                    result: null
+                };
+                taskHistory.unshift(task);
+                updateTaskList();
+            }
+
+            function updateStats() {
+                statsInProgress = taskHistory.filter(t => t.status === 'PENDING').length;
+                statsCompleted = taskHistory.filter(t => t.status === 'SUCCESS').length;
+                
+                document.getElementById('completedTasks').textContent = statsCompleted;
+                document.getElementById('inProgressTasks').textContent = statsInProgress;
+            }
+
+            async function removeTask(taskId) {
+                try {
+                    const response = await fetch(`/tasks/delete/${taskId}`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        taskHistory = taskHistory.filter(task => task.id !== taskId);
+                        updateTaskList();
+                    }
+                } catch (error) {
+                    console.error('Error removing task:', error);
+                }
+            }
+
+            function updateTaskList() {
+                const taskList = document.getElementById('taskList');
+                taskList.innerHTML = taskHistory.map(task => `
+                    <div class="task-item ${task.status.toLowerCase()}" data-task-id="${task.id}">
+                        <div class="task-info">
+                            <span>Task: ${task.a} + ${task.b}</span>
+                            <span class="task-id">ID: ${task.id}</span>
+                            <span class="task-status">${task.status}</span>
+                            <i class="fas fa-trash delete-icon" onclick="removeTask('${task.id}')"></i>
+                        </div>
+                        <div class="task-result">
+                            ${task.result !== null ? `Result: ${task.result}` : ''}
+                        </div>
+                    </div>
+                `).join('');
+                updateStats();
+            }
+
+            async function checkResult(taskId) {
+                const task = taskHistory.find(t => t.id === taskId);
+                if (!task) return;
+
+                while (true) {
+                    const response = await fetch(`/result/${taskId}`);
+                    const data = await response.json();
+                    
+                    task.status = data.state;
+                    if (data.state === 'SUCCESS') {
+                        task.result = data.result;
+                        break;
+                    } else if (data.state === 'FAILURE') {
+                        task.result = `Error: ${data.status}`;
+                        break;
+                    }
+                    updateTaskList();
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                updateTaskList();
+                updateStats();
+            }
+        </script>
+    </div>
+</body>
+</html>
