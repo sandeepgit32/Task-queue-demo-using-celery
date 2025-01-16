@@ -28,6 +28,7 @@ button {
     border: none;
     border-radius: 5px;
     cursor: pointer;
+    margin-top: 15px;  /* Added this line */
 }
 
 button:hover {
@@ -97,6 +98,19 @@ input[type="number"] {
     margin: 0 5px;
     border: 1px solid #ddd;
     border-radius: 4px;
+}
+
+select {
+    padding: 8px;
+    margin: 0 5px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    cursor: pointer;
+}
+
+select:hover {
+    border-color: #007bff;
 }
 
 .stats-container {

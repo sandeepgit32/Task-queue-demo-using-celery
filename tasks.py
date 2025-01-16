@@ -30,3 +30,26 @@ def add_together(self, a, b):
     except Exception as exc:
         logger.error(f"Error adding numbers: {exc}")
         self.retry(exc=exc, countdown=3)
+
+
+@app.task(name="tasks.multiply_together", bind=True, max_retries=3, soft_time_limit=30)
+def multiply_together(self, a, b):
+    """Multiply two numbers together.
+
+    Args:
+        a: First number
+        b: Second number
+
+    Returns:
+        Product of a and b
+    """
+    try:
+        if not all(isinstance(x, (int, float)) for x in [a, b]):
+            raise ValueError("Inputs must be numbers")
+        time.sleep(10)  # Add 10 second delay
+        result = a * b
+        logger.info(f"Successfully multiplied {a} * {b} = {result}")
+        return result
+    except Exception as exc:
+        logger.error(f"Error multiplying numbers: {exc}")
+        self.retry(exc=exc, countdown=3)

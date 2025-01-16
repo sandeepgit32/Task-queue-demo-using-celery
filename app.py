@@ -63,6 +63,37 @@ def add():
             "id": task.id,
             "a": a,
             "b": b,
+            "operation": "add",
+            "status": "PENDING",
+            "result": None
+        }
+        redis_client.lpush("task_history", json.dumps(task_data))
+
+        return jsonify({"task_id": task.id}), 202
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": "Invalid input values"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/multiply", methods=["POST"])
+def multiply():
+    """Submit a new multiplication task to the Celery queue."""
+    try:
+        data = request.get_json()
+        if not data or "a" not in data or "b" not in data:
+            raise BadRequest("Missing required parameters 'a' or 'b'")
+
+        a = float(data["a"])
+        b = float(data["b"])
+
+        task = celery.send_task("tasks.multiply_together", args=[a, b])
+
+        task_data = {
+            "id": task.id,
+            "a": a,
+            "b": b,
+            "operation": "multiply",
             "status": "PENDING",
             "result": None
         }
@@ -77,23 +108,23 @@ def add():
 
 @app.route("/result/<task_id>")
 def task_result(task_id):
-    """Retrieve the result of a previously submitted task.
-
-    Args:
-        task_id: The ID of the task to check
-
-    Returns:
-        JSON response containing:
-        - Current state of the task
-        - Result value if completed
-        - Error message if failed
-        - Pending status if not ready
-    """
+    """Retrieve the result of a previously submitted task."""
     try:
-        task = celery.AsyncResult(task_id)
-
-        # Update task status in Redis
+        # First check if task exists in history
+        task_exists = False
         tasks = redis_client.lrange("task_history", 0, -1)
+        for task_data in tasks:
+            task_dict = json.loads(task_data)
+            if task_dict["id"] == task_id:
+                task_exists = True
+                break
+        
+        if not task_exists:
+            return jsonify({"error": "Task not found"}), 404
+
+        task = celery.AsyncResult(task_id)
+        
+        # Update task status in Redis
         for i, task_data in enumerate(tasks):
             task_dict = json.loads(task_data)
             if task_dict["id"] == task_id:

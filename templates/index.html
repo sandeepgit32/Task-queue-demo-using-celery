@@ -2,18 +2,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Addition Task Queue</title>
+    <title>Task Queue Demo</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
-        <h1>Addition Task Queue</h1>
+        <h1>Addition/Multipication of Two Numbers</h1>
         <div class="form-container">
             <form id="addForm">
+                <select name="operation" required>
+                    <option value="add">Add (+)</option>
+                    <option value="multiply">Multiply (×)</option>
+                </select>
                 <input type="number" name="a" placeholder="First number" required>
                 <input type="number" name="b" placeholder="Second number" required>
-                <button type="submit">Add Numbers</button>
+                <button type="submit">Send task to queue</button>
             </form>
         </div>
         
@@ -77,12 +81,12 @@
             document.getElementById('addForm').onsubmit = async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.target);
+                const operation = formData.get('operation');
                 const a = formData.get('a');
                 const b = formData.get('b');
                 
-                // Only reset the form if there's an error
                 try {
-                    const response = await fetch('/add', {
+                    const response = await fetch(`/${operation}`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ a: Number(a), b: Number(b) })
@@ -90,21 +94,21 @@
                     const data = await response.json();
                     
                     if (data.task_id) {
-                        addTaskToHistory(data.task_id, a, b);
+                        addTaskToHistory(data.task_id, a, b, operation);
                         checkResult(data.task_id);
-                        // Don't reset the form - remove e.target.reset() if it exists
                     }
                 } catch (error) {
                     console.error('Error:', error);
-                    e.target.reset(); // Only reset on error
+                    e.target.reset();
                 }
             };
 
-            function addTaskToHistory(taskId, a, b) {
+            function addTaskToHistory(taskId, a, b, operation) {
                 const task = {
                     id: taskId,
                     a: a,
                     b: b,
+                    operation: operation,
                     status: 'PENDING',
                     result: null
                 };
@@ -139,7 +143,7 @@
                 taskList.innerHTML = taskHistory.map(task => `
                     <div class="task-item ${task.status.toLowerCase()}" data-task-id="${task.id}">
                         <div class="task-info">
-                            <span>Task: ${task.a} + ${task.b}</span>
+                            <span>Task: ${task.a} ${task.operation === 'multiply' ? '×' : '+'} ${task.b}</span>
                             <span class="task-id">ID: ${task.id}</span>
                             <span class="task-status">${task.status}</span>
                             <i class="fas fa-trash delete-icon" onclick="removeTask('${task.id}')"></i>
@@ -157,19 +161,33 @@
                 if (!task) return;
 
                 while (true) {
-                    const response = await fetch(`/result/${taskId}`);
-                    const data = await response.json();
-                    
-                    task.status = data.state;
-                    if (data.state === 'SUCCESS') {
-                        task.result = data.result;
-                        break;
-                    } else if (data.state === 'FAILURE') {
-                        task.result = `Error: ${data.status}`;
+                    try {
+                        const response = await fetch(`/result/${taskId}`);
+                        // Stop polling if task is not found (404) or other server errors (500)
+                        if (!response.ok) {
+                            task.status = 'FAILURE';
+                            task.result = 'Task was deleted or not found';
+                            break;
+                        }
+                        
+                        const data = await response.json();
+                        task.status = data.state;
+                        
+                        if (data.state === 'SUCCESS') {
+                            task.result = data.result;
+                            break;
+                        } else if (data.state === 'FAILURE') {
+                            task.result = `Error: ${data.status}`;
+                            break;
+                        }
+                        updateTaskList();
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } catch (error) {
+                        // Handle network errors or other exceptions
+                        task.status = 'FAILURE';
+                        task.result = 'Error checking task status';
                         break;
                     }
-                    updateTaskList();
-                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
                 updateTaskList();
                 updateStats();
